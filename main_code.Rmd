@@ -1,0 +1,587 @@
+# Prepare news data for sentiment analyzer
+{r}
+# Load Packages
+library(readxl)
+library(tidyverse)
+
+news_data <- read_excel("RESULT ALL 19 Des 2018 4 Des 2020.xlsx")
+news_data
+
+# define the function to preprocess the data from scraping result
+preprocess = function(data){
+	# Cleaning date to specified format
+	data$Date <- str_replace(data$Date, "- ", "")
+	data$Date <- as.Date(data$Date, format = "%d/%m/%Y")
+	# Group news headlines by date
+	news_data_date <- data %>% group_by(Date) %>% summarise(News_Headlines = paste(News_Headline, collapse = " "))
+	return(news_data_date)
+}
+
+# Run preprocessing data 
+news_data_date = preprocess(news_data)
+
+# Save result to excel file
+writexl::write_xlsx(news_data_date, "NEWS DATA by Date.xlsx")
+
+# Prepare test news data
+news_data2 = read_delim("scrap18.csv", ";")
+news_data2_date = preprocess(news_data2)
+writexl::write_xlsx(news_data2_date, "NEWS DATA Test by Date.xlsx")
+
+VADER Sentiment Analyzer
+{python}
+# VADER Sentiment Analyzer
+# for Labelling the data
+# import library
+import pandas as pd
+#!pip install vader-multi
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+{python}
+# Read data
+df = pd.read_excel("/content/drive/MyDrive/Data/SKRIPSI/NEWS DATA by Date.xlsx")
+df.head(20)
+
+{python}
+def vader_analyzer(data):
+	analyzer = SentimentIntensityAnalyzer() # Define the analyzer
+	result = {} 
+	for i in range(len(data)): # Labelling the data 
+		result[i] = analyzer.polarity_scores(data["News_Headlines"][i])
+	result_sentiment = pd.DataFrame.from_dict(result).T # save result to a dataframe
+	result_sentiment["Date"] = data["Date"]
+	return result_sentiment
+
+{python}
+result_sentiment = vader_analyzer(df)
+{python}
+# save result to excel file
+result_sentiment.to_excel("/content/drive/MyDrive/Data/SKRIPSI/Hasil Sentimen.xlsx", index=False)
+
+{python}
+# Running VADER sentiment analyzer to test data
+df_test = pd.read_excel("/content/drive/MyDrive/Data/SKRIPSI/NEWS DATA Test by Date.xlsx")
+result_sentiment_test = vader_analyzer(df_test)
+result_sentiment_test.to_excel("/content/drive/MyDrive/Data/SKRIPSI/Hasil Sentimen Test.xlsx", index=False)
+
+{python}
+temp = vader_analyzer(r.news_data3_date)
+temp.head
+
+{python}
+import pandas as pd
+pd.DataFrame.to_excel(temp, "Hasil Sentimen Test All.xlsx")
+
+# Merge Data
+{r}
+# PREPARE FOR ARIMAX
+# Load library
+library(tidyverse)
+library(readxl)
+
+# Read data
+# stock price data from yahoo finance
+df1 = read_csv("JKSE_all.csv")
+#df1$Date = as.Date(df1$Date, format="%m/%d/%Y")
+#write_csv(df1, "JKSE_all.csv")
+# result vader data
+df2 = read_xlsx("Hasil Sentimen.xlsx")
+df2$Date = as.Date(df2$Date, format="%Y-%m-%d")
+
+# merge data
+# df1 use column 1 and 5
+# df2 use column 4 and 5
+df = merge(df1[,c(1,5)], df2[,c(4,5)])
+
+# save result to csv file
+write_csv(df, "Data Close n Compound.csv")
+
+# test data
+df1_test = df1[473:nrow(df1),]
+df2_test = read_xlsx("Hasil Sentimen Test All.xlsx")
+df2_test$Date = as.Date(df2_test$Date, format="%Y-%m-%d")
+
+df_test = merge(df1_test[,c(1,5)], df2_test[,c(4,5)])
+
+write_csv(df_test, "Data Test.csv")
+
+ARIMAX Modeling
+{r}
+# Import packages
+library(tidyverse)
+library(forecast)
+library(tseries)
+library(quantmod)
+library(TSA)
+
+Read datasets
+
+{r}
+df <- read_csv("Data Close n Compound.csv")
+df
+Yt <- df$Close
+Xt <- df$compound
+
+# Prewhitening Input series
+#Plot Input series (compound)
+{r}
+ggplot(df, aes(Date, compound)) + geom_line() + theme_minimal()
+
+#Box-Cox test to check stationerity varians
+
+{r}
+FitAR::Box-Cox(Xt)
+
+#ADF test to check stationerity means
+
+{r}
+adf.test(Xt)
+
+#Model identification
+#check ACF and PACF
+{r}
+ggAcf(Xt)
+ggPacf(Xt)
+#lag tertinggi ARMA(3,3)
+Model
+{r}
+# 1. ARMA(3,3)
+mx1 <- Arima(Xt, order = c(3,0,3))
+mx1
+lmtest::coeftest(mx1, df=length(Xt)-6)
+checkresiduals(mx1)
+# semua parameter signifikan dan white noise
+
+{r}
+# 2. ARMA(3,2)
+mx2 <- Arima(Xt, order = c(3,0,2))
+mx2
+lmtest::coeftest(mx2, df=length(Xt)-5)
+checkresiduals(mx2)
+# tidak ada parameter yang signifikan
+
+{r}
+# 5. ARMA(3,1)
+mx5 <- Arima(Xt, order = c(3,0,1))
+mx5
+lmtest::coeftest(mx5, df=length(Xt)-4)
+checkresiduals(mx5)
+# parameter tidak signifikan dan white noise
+
+{r}
+# 3. AR(3)
+mx3 <- Arima(Xt, order = c(3,0,0))
+mx3
+lmtest::coeftest(mx3, df=length(Xt)-3)
+checkresiduals(mx3)
+# semua parameter signifikan dan white noise
+
+{r}
+# 4. AR(2)
+mx4 <- Arima(Xt, order = c(2,0,0))
+mx4
+lmtest::coeftest(mx4, df=length(Xt)-2)
+checkresiduals(mx4)
+# semua parameter signifikan dan white noise
+# dipilih model yang paling sederhana dan white noise yakni AR(2)
+
+{r}
+# 6. ARMA(1,1)
+mx6 <- Arima(Xt, order = c(1,0,1))
+mx6
+lmtest::coeftest(mx6, df=length(Xt)-2)
+checkresiduals(mx6)
+# semua parameter signifikan dan white noise
+
+#deret hasil prewhitening output $\alpha t$
+{r}
+# get prewhitening series (at) of input
+at <- mx6$residuals
+mx6$sigma2
+mx6$coef
+plot(at, type='l')
+
+{r}
+# prewhitening output series
+ggplot(df, aes(Date, Close)) + geom_line() + theme_minimal()
+
+{r}
+# check ACF and PACF
+ggAcf(Yt)
+ggPacf(Yt)
+# dari plot ACF, deret output tidak stasioner thd rata-rata
+
+{r}
+# check ADF test
+adf.test(Yt)
+# deret Yt tidak stasioner thd rata-rata dilihat dari plot ACF dan ADF test
+
+{r}
+# maka diperlukan differencing
+# dan dilakukan pengecekan terhadap ACF dan PACF pada delta Yt
+ggAcf(diff(Yt))
+ggPacf(diff(Yt))
+
+{r}
+adf.test(diff(Yt))
+# deret delta Yt sudah stasioner thd rata-rata dilihat dari plot ACF dan ADF test
+
+{r}
+# plot delta Yt
+Yts <- diff(Yt)
+plot(Yts, type = "l")
+
+{r}
+# get coef from prewhitening input series
+coef <- mx6$coef
+deret hasil prewhitening output $\beta t$
+{r}
+get_bt = function(Yt){
+  bt = c(0)
+  for (i in 2:length(Yt)){
+    tmp = Yt[i] - coef[1]*Yt[i-1] - coef[2]*bt[i-1]
+    bt = append(bt,tmp)
+  }
+  return(bt)
+}
+
+{r}
+# get prewhitening output series (bt)
+bt <- get_bt(Yts)
+plot(bt, type = "l")
+ggAcf(bt)
+
+{r}
+write.csv(data.frame(at,bt=append(NA,bt)), "Lampiran at bt.csv", row.names = F)
+
+{r}
+# get standard deviation from at and bt
+s.at <- sd(at)
+s.bt <- sd(bt)
+
+{r}
+# get ccf from at and bt to get noise series
+ccfbt <- ccf(c(at[-(1:2)]),c(bt[-(1:2)]))$acf
+ccf.btat <- data.frame(Lag = c(-23:23), ccf = ccfbt)
+
+{r}
+write.csv(ccf.btat, "Lampiran ccf.csv", row.names = F)
+
+{r}
+# save the ccf from lag 0 to 24
+cc = ccf.btat[24:nrow(ccf.btat),]
+cc
+
+{r}
+# get respon impuls (vk)
+# vl = sd(bt)/sd(at) * ccf
+respon.impuls <- cc %>% mutate(vk=s.bt/s.at*ccf)
+respon.impuls
+
+{r}
+write_csv(respon.impuls, "Lampiran respon impuls.csv")
+
+{r}
+# Identify b,r,s order
+# plot response impuls
+ggplot(respon.impuls, aes(Lag, vk)) + geom_col() + 
+  expand_limits(y=c(-30,50)) +
+  geom_abline(intercept = 1/sqrt(nrow(df)-respon.impuls$Lag), slope = 0, col = "red") +
+  geom_abline(intercept = -1/sqrt(nrow(df)-respon.impuls$Lag), slope = 0, col = "blue") +
+  theme_minimal()
+# orde transfer function (b,r,s) (0,0,1)
+
+
+
+Noise Model (Nt)
+{r}
+get_nt = function(yt,xt){
+  nt = c(0)
+  w0 = respon.impuls$vk[1]
+  w1 = -respon.impuls$vk[2]
+  for (i in 2:length(yt)){
+    tmp = yt[i] - w0*xt[i] + w1*xt[i-1]
+    nt = append(nt,tmp)
+  }
+  return(nt)
+}
+
+{r}
+# create noise series (nt) 
+nt = get_nt(Yts,Xt)
+plot(nt, type = "l")
+ggAcf(nt)
+ggPacf(nt)
+
+{r}
+write_csv(data.frame(nt), "Lampiran Nt.csv")
+
+# ARIMAX Model
+{r}
+# Modeling ARIMAX([3],1,0)(0,0,1)
+m.yt <- arimax(Yt, order=c(3,1,0), 
+               xtransf = Xt, 
+               transfer = list(c(0,1)), fixed = c(0,0,NA, NA, NA),
+               method = "ML")
+m.yt
+lmtest::coeftest(m.yt, df=length(Yt)-3)
+checkresiduals(m.yt)
+# parameter signifikan
+# residual doesn't meet the white noise assumptions
+
+{r}
+ccf(c(at[-1]),c(m.yt$residuals[-1]))
+
+{r}
+# get fitted value for output series (Yt)
+ytduga <- fitted(m.yt)
+
+{r}
+# save the result
+result <- data.frame(Date=df$Date, Yt, Xt, ytduga, resid=Yt-ytduga)
+result
+
+{r}
+write_csv(result, "Hasil arimax.csv")
+write_csv(data.frame(result$resid),"Resid Arimax.csv", col_names = F)
+
+# One Step Forecast ARIMAX
+
+# Load Data Test
+{r}
+test_df <- read_csv("Data Test.csv")
+test_df
+
+
+{r}
+forecast_arimax = function(y, x, y_test, x_tr, a, h=12){
+    result_pred = c()
+    t = length(y) + 1
+    phi = 0.150305
+    w0 = 37.129982
+    w1 = 17.440093
+    y = append(y, y_test)
+    x = append(x, x_tr)
+    for (t in seq(t,t+h-1)){
+        ypred = y[t-1] + phi*(y[t-3]-y[t-4]) + w0*x[t] - w1*x[t-1] -
+                    phi*w0*x[t-3] + phi*w1*x[t-4]
+        result_pred = append(result_pred, ypred)
+        a = append(a, y[t]-ypred)
+    }
+    return(result_pred)
+}
+
+{r}
+fc_arimax = forecast_arimax(result$Yt, result$Xt, 
+                            test_df$Close, test_df$compound, 
+                            result$resid, h=37)
+
+{r}
+result_forecast = test_df %>% mutate(fc_arimax)
+write_csv(result_forecast, "hasil forecast arimax.csv")
+
+{r}
+res_test = test_df$Close - fc_arimax
+res_test
+Reset Test
+{r}
+library(lmtest)
+resettest(Yt~Lag(Yt,1)+Lag(Yt,3)+Lag(Yt,4)+Xt+Lag(Xt,1)+Lag(Xt,3)+Lag(Xt,4),
+          type="fitted")
+
+# GRU Modeling
+# Don't run without virtual env for tensorflow
+
+{python}
+# GRU Model for residual
+# Import All library
+import numpy as np
+from keras.models import Sequential
+from keras.layers.core import Activation, Dense, Dropout
+from keras.layers.recurrent import GRU
+import matplotlib.pyplot as plt
+
+# Get data from csv file
+def get_data(path):
+  if path.endswith(".csv"):
+    temp = np.genfromtxt(path)
+    i = 0
+    while (np.isnan(temp[i])):
+      i += 1
+      data = temp[i:]
+    return data
+  else:
+    return print("Not a csv file")
+
+# Generate Timelag for Time series variable
+# length is the count of predictor variables would be generate
+def gen_timelag(data, length=1):
+    x = np.zeros((len(data)-length, length))
+    y = np.zeros(len(data)-length)
+    for i in range(len(data)-length):
+        x[i] = np.array([x for x in data[i:i+length]])
+        y[i] = data[i+length]
+    return x, y
+
+# Get residual arimax data
+resid = get_data("/content/drive/MyDrive/data/residual arimax.csv")
+
+# Generate 4 input variables
+length = 4
+x_train, y_train = gen_timelag(resid, length)
+
+# Reshape predictor variables for GRU model inputs (3 dimension)
+x = np.reshape(x_train, (x_train.shape[0], length, 1))
+
+# Build GRU model
+# with 2 layer (GRU and Dense)
+# GRU layer with 50 GRU units
+model = Sequential()
+model.add(GRU(50, input_shape = (length, 1)))
+model.add(Dense(4, activation='relu'))
+model.add(Dense(1))
+model.compile(optimizer='adam', loss='mean_squared_error')
+
+# Compile GRU model 
+# Print summary of model
+print(model.summary())
+
+# Training GRU model
+# epoch is the iteration would be run
+history = model.fit(x, y_train, epochs=500)
+
+# Plot model loss
+plt.plot(history.history['loss'])
+plt.title('model loss')
+plt.ylabel('loss')
+plt.xlabel('epoch')
+plt.show()
+
+# Save model to keras h5 format and load in Rstudio
+model.save("gru_50_armax3_3.h5")
+
+# Load GRU Model
+{r}
+library(reticulate)
+library(keras)
+library(tensorflow)
+tf$version$VERSION
+
+{r}
+gru <- tf$keras$models$load_model("gru_50_armax3_3.h5")
+
+{r}
+lagg <- iter_next(as_iterator(timeseries_generator(result$resid[-1], result$resid[-1], length = 4, batch_size = length(result$resid[-1]) - 4)))
+x_lagg <- lagg[[1]]
+y_lagg <- lagg[[2]]
+dim(x_lagg) <- c(466, 4, 1)
+
+{r}
+pred_res <- gru %>%
+  predict(x_lagg)
+
+{r}
+data.frame(Date = df$Date[-(1:5)],
+           res_pred = pred_res,
+           res_act = y_lagg) %>% 
+  gather("Group", "Value", -Date) %>% 
+  ggplot(aes(x = Date, y = Value, col = Group)) + geom_line() + theme_minimal()
+
+{r}
+res_test_tensor = c(tail(result$resid,4), res_test)
+
+{r}
+lagg_test <- iter_next(as_iterator(timeseries_generator(res_test_tensor, res_test_tensor, length = 4, batch_size = length(res_test_tensor) - 4)))
+x_lagg_test <- lagg_test[[1]]
+y_lagg_test <- lagg_test[[2]]
+dim(x_lagg_test) <- c(37, 4, 1)
+
+{r}
+pred_res_test <- gru %>%
+  predict(x_lagg_test)
+{r}
+data.frame(Date = test_df$Date,
+           res_pred = pred_res_test,
+           res_act = y_lagg_test) %>% 
+  gather("Group", "Value", -Date) %>% 
+  ggplot(aes(x = Date, y = Value, col = Group)) + geom_line() + theme_minimal()
+
+# Hybrid Model Fungsi Transfer-GRU
+{r}
+train_fit <- result$ytduga[-(1:5)] + pred_res
+data.frame(Date = df$Date[-(1:5)],
+           y_pred = train_fit,
+           y_act = result$Yt[-(1:5)]) %>% 
+  gather("Group", "Value", -Date) %>% 
+  ggplot(aes(x = Date, y = Value, col = Group)) + geom_line() + theme_minimal()
+
+{r}
+data.frame(Date = df$Date[-(1:5)],
+           y_pred = train_fit,
+           y_act = result$Yt[-(1:5)])[-(1:400),] %>% 
+  gather("Group", "Value", -Date) %>% 
+  ggplot(aes(x = Date, y = Value, col = Group)) + geom_line() + theme_minimal()
+
+{r}
+test_fit <- fc_arimax + pred_res_test
+data.frame(Date = test_df$Date,
+           y_pred = test_fit,
+           y_act = test_df$Close) %>% 
+  gather("Group", "Value", -Date) %>% 
+  ggplot(aes(x = Date, y = Value, col = Group)) + geom_line() + theme_minimal()
+
+# Analyze the result
+{r}
+library(MLmetrics)
+#train
+MAPE(train_fit,result$Yt[-(1:5)])
+#test
+MAPE(test_fit,test_df$Close)
+
+# Forecast Model Hybrid
+
+{r}
+forecast_hybrid = function(model, y, x, e, x_tr, h=12){
+    #init
+    result_pred = c()
+    t = length(y)+1
+    phi = 0.150305
+    w0 = 37.129982
+    w1 = 17.440093
+    x = append(x, x_tr)
+   
+    for (t in seq(t,t+h-1)){
+        #forecast error with GRU model
+        e_pred = model %>% predict(array(e[(t-4):(t-1)], dim = c(1,4,1)))
+        e = append(e, e_pred)  
+        #forecast hybrid
+        ypred = y[t-1] + phi*(y[t-3]-y[t-4]) + w0*x[t] - w1*x[t-1] -
+                    phi*w0*x[t-3] + phi*w1*x[t-4] + e[t]
+        y = append(y, ypred)
+        result_pred = append(result_pred, ypred)
+    }
+    return(result_pred)
+}
+
+#membutuhkan 4 nilai yt, xt, dan et terakhir
+
+{r}
+# x_tr forecast
+df_fc = read_excel("Hasil Sentimen Forecast All.xlsx")
+
+{r}
+fc_hybrid = forecast_hybrid(gru,
+                test_df$Close[34:37],
+                test_df$compound[34:37],
+                pred_res_test[34:37], 
+                df_fc$compound, 
+                h=nrow(df_fc))
+fc_hybrid = data.frame(Date=df_fc$Date,
+                fc_hybrid=fc_hybrid)
+fc_hybrid %>% 
+    ggplot(aes(as.Date(Date),fc_hybrid)) + 
+    geom_line(col='magenta') +
+    theme_minimal() + 
+    xlab("Date") + ylab("IHSG") + 
+    scale_x_date(date_labels="%d %b %y",
+        date_breaks = "1 weeks")
